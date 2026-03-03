@@ -1713,22 +1713,35 @@
         const [sidebarOpen, setSidebarOpen] = useState(false);
         const [firebaseReady, setFirebaseReady] = useState(false);
 
-        // 🔹 Load products from Supabase when app starts
-        useEffect(() => {
-          loadProducts();
-        }, []);
+        async function loadProducts(shopId) {
+          if (!shopId) return;
 
-        async function loadProducts() {
           const { data, error } = await supabase
             .from("products")
             .select("*")
+            .eq("shop_id", shopId)
             .order("name");
 
           if (error) {
             console.error("Error loading products:", error);
           } else {
-            console.log("Products loaded from Supabase ✅");
             setProducts(data);
+          }
+        }
+
+        async function loadOrders(shopId) {
+          if (!shopId) return;
+
+          const { data, error } = await supabase
+            .from("orders")
+            .select("*")
+            .eq("shop_id", shopId)
+            .order("created_at", { ascending: false });
+
+          if (error) {
+            console.error("Error loading orders:", error);
+          } else {
+            setOrders(data);
           }
         }
 
@@ -1773,6 +1786,8 @@
 
           if (data && data.length > 0) {
             setShop(data[0]);
+            loadProducts(data[0].id);
+            loadOrders(data[0].id);
             setView("ownerDash");
           } else {
             setView("ownerSetup");
@@ -1810,6 +1825,7 @@
           if (!cart.length) return;
 
           const orderData = {
+            shop_id: shop.id,
             customer_name: currentUser?.name || "Customer",
             total: cart.reduce((s, x) => s + x.price * x.qty, 0),
             status: "pending",
@@ -1858,7 +1874,7 @@
           );
 
           // 4️⃣ Refresh products from DB
-          loadProducts();
+          loadProducts(shop.id);
 
           // 5️⃣ Update UI state
           const newOrder = {
@@ -1879,15 +1895,24 @@
           notify("Order Placed! 🛍️", "Order saved successfully.", "✅");
         };
 
-        const completeOrder = (orderId) => {
-          setOrders((prev) =>
-            prev.map((o) =>
-              o.id === orderId ? { ...o, status: "completed" } : o,
-            ),
-          );
+        const completeOrder = async (orderId) => {
+          const { error } = await supabase
+            .from("orders")
+            .update({ status: "completed" })
+            .eq("id", orderId);
+
+          if (error) {
+            console.error("Error updating order:", error);
+            notify("Update failed", "Could not mark order as completed", "❌");
+            return;
+          }
+
+          // reload orders from DB to stay synced
+          loadOrders(shop.id);
+
           notify(
             "Order Ready! 📦",
-            `Order #${orderId} marked as completed. Customer notified.`,
+            `Order #${orderId} marked as completed.`,
             "✅",
           );
         };
