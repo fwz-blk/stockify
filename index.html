@@ -1699,7 +1699,7 @@
       const AppCtx = createContext();
 
       function AppProvider({ children }) {
-        const [view, setView] = useState("landing"); // landing | ownerAuth | customerAuth | ownerSetup | ownerDash | customerScan | customerShop | orderSuccess
+        const [view, setView] = useState("landing"); // landing | ownerAuth | customerAuth | ownerSetup | ownerDash | customerDashboard | customerScan | customerShop | orderSuccess
         const [ownerPage, setOwnerPage] = useState("dashboard"); // dashboard | products | orders | lowstock | billing | qrcode
         const [currentUser, setCurrentUser] = useState(null);
         const [userRole, setUserRole] = useState(null); // owner | customer
@@ -1750,15 +1750,6 @@
           checkSession();
         }, []);
 
-        useEffect(() => {
-          const params = new URLSearchParams(window.location.search);
-          const shopIdFromUrl = params.get("shop");
-
-          if (shopIdFromUrl) {
-            loadShopById(shopIdFromUrl);
-          }
-        }, []);
-
         async function loadShopById(shopId) {
           const { data, error } = await supabase
             .from("shops")
@@ -1793,7 +1784,13 @@
             setCurrentUser(userData);
 
             // check if shop exists
-            loadShop(user.id);
+            const savedRole = localStorage.getItem("userRole");
+
+            if (savedRole === "owner") {
+              loadShop(user.id);
+            } else if (savedRole === "customer") {
+              setView("customerDashboard");
+            }
           }
         }
 
@@ -2111,7 +2108,71 @@
           </div>
         );
       }
+      // ============================================================
+      // CUSTOMER DASHBOARD
+      // ============================================================
+      function CustomerDashboard() {
+        const { setView, notify, setShop, loadProducts } = useContext(AppCtx);
+        const [shopId, setShopId] = useState("");
 
+        const handleEnterShop = async () => {
+          if (!shopId) {
+            notify("Error", "Please enter a Shop ID", "❌");
+            return;
+          }
+
+          try {
+            const { data, error } = await supabase
+              .from("shops")
+              .select("*")
+              .eq("id", shopId)
+              .single();
+
+            if (error || !data) {
+              notify("Error", "Shop not found", "❌");
+              return;
+            }
+
+            // Load shop into state
+
+            setShop(data);
+            await loadProducts(data.id);
+
+            setView("customerShop");
+            notify("Success 🏪", `Connected to ${data.name}`, "✅");
+          } catch (err) {
+            notify("Error", "Something went wrong", "❌");
+          }
+        };
+
+        return (
+          <div className="auth-page">
+            <div className="auth-card">
+              <div className="auth-title">🏪 Enter Shop ID</div>
+              <div className="auth-sub">
+                Enter the shop ID to browse products.
+              </div>
+
+              <div className="form-group">
+                <input
+                  className="form-input"
+                  placeholder="Enter Shop ID"
+                  value={shopId}
+                  onChange={(e) => setShopId(e.target.value)}
+                />
+              </div>
+
+              <button
+                className="btn btn-primary"
+                style={{ width: "100%" }}
+                onClick={handleEnterShop}
+              >
+                Enter Shop →
+              </button>
+            </div>
+          </div>
+        );
+      }
       // ============================================================
       // AUTH PAGE
       // ============================================================
@@ -2174,19 +2235,13 @@
             };
 
             setCurrentUser(userData);
+            localStorage.setItem("userRole", role);
 
             // 🔹 decide where to go after login
             if (role === "owner") {
               loadShop(user.id);
             } else {
-              const params = new URLSearchParams(window.location.search);
-              const shopIdFromUrl = params.get("shop");
-
-              if (shopIdFromUrl) {
-                // do nothing — URL loader will handle view
-              } else {
-                setView("customerScan");
-              }
+              setView("customerDashboard");
             }
 
             notify("Login successful 🔐", `Welcome ${userData.name}`, "✅");
@@ -2378,7 +2433,7 @@
             .insert([
               {
                 owner_id: currentUser.uid,
-                shop_name: shopName,
+                name: shopName,
                 phone: phone,
               },
             ])
@@ -5888,6 +5943,7 @@
             {view === "customerAuth" && <AuthPage role="customer" />}
             {view === "ownerSetup" && <OwnerSetupPage />}
             {view === "ownerDash" && <OwnerDashboard />}
+            {view === "customerDashboard" && <CustomerDashboard />}
             {view === "customerScan" && <CustomerScan />}
             {view === "customerShop" && <CustomerShop />}
             {view === "orderSuccess" && <OrderSuccessPage />}
