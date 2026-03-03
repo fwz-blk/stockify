@@ -1750,6 +1750,32 @@
           checkSession();
         }, []);
 
+        useEffect(() => {
+          const params = new URLSearchParams(window.location.search);
+          const shopIdFromUrl = params.get("shop");
+
+          if (shopIdFromUrl) {
+            loadShopById(shopIdFromUrl);
+          }
+        }, []);
+
+        async function loadShopById(shopId) {
+          const { data, error } = await supabase
+            .from("shops")
+            .select("*")
+            .eq("id", shopId)
+            .single();
+
+          if (error) {
+            console.error("Error loading shop from URL:", error);
+            return;
+          }
+
+          setShop(data);
+          loadProducts(data.id);
+          setView("customerShop");
+        }
+
         async function checkSession() {
           const { data } = await supabase.auth.getSession();
 
@@ -2144,9 +2170,16 @@
 
             // 🔹 decide where to go after login
             if (role === "owner") {
-              loadShop(user.id); // check if shop exists
+              loadShop(user.id);
             } else {
-              setView("customerScan");
+              const params = new URLSearchParams(window.location.search);
+              const shopIdFromUrl = params.get("shop");
+
+              if (shopIdFromUrl) {
+                // do nothing — URL loader will handle view
+              } else {
+                setView("customerScan");
+              }
             }
 
             notify("Login successful 🔐", `Welcome ${userData.name}`, "✅");
@@ -5059,7 +5092,7 @@
       // ============================================================
       function QRCodePage() {
         const { shop } = useContext(AppCtx);
-        const qrValue = `stockify://shop/${shop?.ownerId}?name=${encodeURIComponent(shop?.name || "")}`;
+        const qrValue = `${window.location.origin}?shop=${shop?.id}`;
 
         return (
           <div className="page fade-in">
