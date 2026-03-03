@@ -1699,11 +1699,12 @@
       const AppCtx = createContext();
 
       function AppProvider({ children }) {
+        const [isCheckingSession, setIsCheckingSession] = useState(true);
         const [view, setView] = useState("landing"); // landing | ownerAuth | customerAuth | ownerSetup | ownerDash | customerDashboard | customerScan | customerShop | orderSuccess
         const [ownerPage, setOwnerPage] = useState("dashboard"); // dashboard | products | orders | lowstock | billing | qrcode
         const [currentUser, setCurrentUser] = useState(null);
         const [userRole, setUserRole] = useState(null); // owner | customer
-        const [shop, setShop] = useState(DEMO_SHOP);
+        const [shop, setShop] = useState(null);
         const [products, setProducts] = useState([]);
         const [orders, setOrders] = useState([]);
         const [cart, setCart] = useState([]);
@@ -1767,9 +1768,24 @@
           setView("customerShop");
         }
 
+        const handleLogout = async () => {
+          await supabase.auth.signOut();
+
+          // 🔥 Remove stored role
+          localStorage.removeItem("userRole");
+
+          // 🔥 Reset all global state
+          setCurrentUser(null);
+          setUserRole(null);
+          setShop(null);
+          setProducts([]);
+          setOrders([]);
+          setCart([]);
+          setView("landing");
+        };
+
         async function checkSession() {
           const { data } = await supabase.auth.getSession();
-
           const session = data.session;
 
           if (session) {
@@ -1783,15 +1799,16 @@
 
             setCurrentUser(userData);
 
-            // check if shop exists
             const savedRole = localStorage.getItem("userRole");
 
             if (savedRole === "owner") {
-              loadShop(user.id);
+              await loadShop(user.id);
             } else if (savedRole === "customer") {
               setView("customerDashboard");
             }
           }
+
+          setIsCheckingSession(false); // 🔥 VERY IMPORTANT
         }
 
         async function loadShop(ownerId) {
@@ -2032,6 +2049,8 @@
               loadShop,
               loadProducts,
               loadOrders,
+              isCheckingSession,
+              handleLogout,
             }}
           >
             {children}
@@ -2580,12 +2599,11 @@
           setOwnerPage,
           shop,
           currentUser,
-          setView,
-          setCurrentUser,
           lowStockProducts,
           pendingOrders,
           sidebarOpen,
           setSidebarOpen,
+          handleLogout, // 🔥 ADD THIS
         } = useContext(AppCtx);
 
         const navItems = [
@@ -2646,14 +2664,7 @@
                 <div className="nav-section-label" style={{ marginTop: 12 }}>
                   Account
                 </div>
-                <div
-                  className="nav-item"
-                  onClick={async () => {
-                    await supabase.auth.signOut();
-                    setView("landing");
-                    setCurrentUser(null);
-                  }}
-                >
+                <div className="nav-item" onClick={handleLogout}>
                   <span className="nav-icon">🚪</span> Sign Out
                 </div>
               </nav>
@@ -2679,11 +2690,21 @@
       // OWNER DASHBOARD
       // ============================================================
       function DashboardPage() {
-        const { products, orders, pendingOrders, lowStockProducts, shop } =
+        const { shop, products, orders, pendingOrders, lowStockProducts } =
           useContext(AppCtx);
+
+        if (!shop || !products || !orders) {
+          return (
+            <div style={{ padding: 40, textAlign: "center" }}>
+              <div className="spinner"></div>
+            </div>
+          );
+        }
+
         const totalValue = products.reduce((s, p) => s + p.price * p.stock, 0);
+
         const todayOrders = orders.filter(
-          (o) => Date.now() - o.time < 86400000,
+          (o) => Date.now() - (o.time || 0) < 86400000,
         );
 
         return (
@@ -2753,10 +2774,10 @@
                   >
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600 }}>
-                        {o.customerName}
+                        {o.customer_name}
                       </div>
                       <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                        {o.id} · {o.items.length} items
+                        Order #{o.id}
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -3222,16 +3243,7 @@
                       {order.status}
                     </span>
                   </div>
-                  <div className="order-items">
-                    {order.items.map((it, i) => (
-                      <div key={i} className="order-item-row">
-                        <span>
-                          {it.name} × {it.qty} {it.unit}
-                        </span>
-                        <span>₹{it.price * it.qty}</span>
-                      </div>
-                    ))}
-                  </div>
+
                   <div className="order-footer">
                     <div>
                       <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
@@ -5259,7 +5271,14 @@
       // OWNER DASHBOARD SHELL
       // ============================================================
       function OwnerDashboard() {
-        const { ownerPage, setSidebarOpen } = useContext(AppCtx);
+        const { ownerPage, setSidebarOpen, shop } = useContext(AppCtx);
+        if (!shop || !shop.id) {
+          return (
+            <div className="page">
+              <div className="spinner"></div>
+            </div>
+          );
+        }
 
         const titles = {
           dashboard: "Dashboard",
@@ -5929,8 +5948,24 @@
       // APP ROOT
       // ============================================================
       function App() {
-        const { view, userRole } = useContext(AppCtx);
+        const { view, isCheckingSession } = useContext(AppCtx);
         const [showFirebaseNotice, setShowFirebaseNotice] = useState(false);
+
+        // 🔥 Block render until session is restored
+        if (isCheckingSession) {
+          return (
+            <div
+              style={{
+                minHeight: "100vh",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <div className="spinner"></div>
+            </div>
+          );
+        }
 
         return (
           <>
