@@ -1788,7 +1788,6 @@
               uid: user.id,
               email: user.email,
               name: user.email.split("@")[0],
-              role: "owner", // we default to owner for now
             };
 
             setCurrentUser(userData);
@@ -1962,10 +1961,17 @@
         };
 
         const addProduct = async (product) => {
+          if (!shop?.id) {
+            console.error("No shop ID found");
+            notify("Error", "Shop not loaded properly", "❌");
+            return;
+          }
+
           const { data, error } = await supabase
             .from("products")
             .insert([
               {
+                shop_id: shop.id,
                 name: product.name,
                 category: product.category,
                 price: product.price,
@@ -1973,16 +1979,15 @@
                 unit: product.unit,
               },
             ])
-            .select(); // returns inserted row
+            .select();
 
           if (error) {
             console.error("Error adding product:", error);
+            notify("Error", "Could not add product", "❌");
             return;
           }
 
-          // update UI instantly
           setProducts((prev) => [...data, ...prev]);
-
           console.log("Product saved ✅");
         };
 
@@ -2028,6 +2033,8 @@
               setSidebarOpen,
               firebaseReady,
               loadShop,
+              loadProducts,
+              loadOrders,
             }}
           >
             {children}
@@ -2340,7 +2347,14 @@
       // OWNER PROFILE SETUP
       // ============================================================
       function OwnerSetupPage() {
-        const { setView, setShop, currentUser, notify } = useContext(AppCtx);
+        const {
+          setView,
+          setShop,
+          currentUser,
+          notify,
+          loadProducts,
+          loadOrders,
+        } = useContext(AppCtx);
         const [shopName, setShopName] = useState("");
         const [phone, setPhone] = useState("");
         const [error, setError] = useState("");
@@ -2377,6 +2391,10 @@
           }
 
           setShop(data[0]);
+
+          // 🔥 Immediately load shop data
+          await loadProducts(data[0].id);
+          await loadOrders(data[0].id);
 
           notify("Profile Complete! 🏪", `${shopName} is now set up.`, "✅");
 
